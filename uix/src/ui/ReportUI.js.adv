@@ -1,0 +1,199 @@
+import React, { useEffect, useCallback, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { DatePicker, Select, Card, Button, Checkbox } from 'antd';
+import MessageBox from '../components/MessageBox';
+import LoadingBox from '../components/LoadingBox';
+import api from '../utils/api';
+
+import {AgGridReact} from '@ag-grid-community/react';
+import { ClientSideRowModelModule } from "@ag-grid-community/client-side-row-model";
+import { CsvExportModule } from "@ag-grid-community/csv-export";
+
+import { ColumnsToolPanelModule } from "@ag-grid-enterprise/column-tool-panel";
+import { FiltersToolPanelModule } from "@ag-grid-enterprise/filter-tool-panel";
+import { RowGroupingModule } from "@ag-grid-enterprise/row-grouping";
+
+import '@ag-grid-community/core/dist/styles/ag-grid.css';
+import '@ag-grid-community/core/dist/styles/ag-theme-alpine.css';
+import "@ag-grid-community/core/dist/styles/ag-theme-alpine-dark.css";
+
+const { RangePicker } = DatePicker;
+
+const apiURL = "http://localhost:8282";
+
+const ReportUI =  props => {
+    const navigate = useNavigate();
+    const { userInfo, loading, error: userError } = useSelector((state) => state.userSignIn);
+    if(!userInfo) navigate('/signin');
+    
+    const [fetching, setFetching] = useState(false);
+    const [isRichFeature, setRichFeature] = useState();
+
+    /* Grid Configurations */
+    const gridRef = useRef();
+    const gridModulesRichFeature = [
+        ClientSideRowModelModule,
+        CsvExportModule,
+        ColumnsToolPanelModule,
+        FiltersToolPanelModule,
+        RowGroupingModule
+    ];
+    const gridModules = [
+        ClientSideRowModelModule,
+        CsvExportModule
+    ];
+
+    const columnDefs = [
+        { headerName: "Exercise", field: 'exercise_routine', rowGroup: false, hide: false},
+        { headerName: "Date & Time", field: 'datetime' },
+        { headerName: "Duration", field: 'duration'}
+    ];
+    /* display each row grouping in group rows */
+    const groupDisplayType = 'singleColumn';
+
+    const [messages, setMessage] = useState([]);
+    const [dateRange, setDateRange] = useState([]);
+    const [error, setError] = useState(userError);
+    const [exerciseType, setExerciseType] = useState("all");
+
+    const fetchMessage = useCallback(async (startDate = null, endDate = null) => {
+        try{
+            let query = exerciseType !== "all" ? `?userId=${userInfo._id}&exercise=${exerciseType}` : `?userId=${userInfo._id}`;
+            if(startDate){
+                if(query !== "") query = `${query}&startDate=${startDate}`;
+                else query = `?startDate=${startDate}`;
+            }
+            
+            if(endDate){
+                if(query !== "") query = `${query}&endDate=${endDate}`;
+                else query = `?endDate=${endDate}`;
+            }
+            setFetching(true);
+            const response = await api('get', `${apiURL}/Message${query}`);
+            setFetching(false);
+            const data = response.data.map (item => ({datetime: item.datetime, exercise_routine: item.exercise_routine, duration: item.duration}))
+            setMessage(data);
+        }
+        catch(err){
+            setError(err.message || "Server error");
+        }
+       
+    }, [setMessage, exerciseType])
+
+    useEffect(()=>{
+        if(!userInfo) navigate('/signin');
+		else fetchMessage();
+    }, [])
+
+    const onDateChange = (date, dateString) => {
+        setDateRange(dateString);
+    }
+
+    const handleQuery = () => {
+        const startDate = dateRange.length && dateRange[0] !== "" ? `${dateRange[0]} 00:00:00` : null;
+        const endDate = dateRange.length && dateRange[1] !== "" ? `${dateRange[1]} 23:59:59` : null;
+        fetchMessage(startDate, endDate);
+    }
+
+    const handleExport = useCallback(() => {
+        gridRef.current.api.exportDataAsCsv();
+    }, []);
+
+    const onRichFeatureChange = () => {
+        //gridRef.current.api.addAggFunc('duration', 'sum')
+        gridRef.current.api.suppressAggFuncInHeader = true;
+        gridRef.current.api.groupDisplayType = groupDisplayType;
+        gridRef.current.api.groupIncludeFooter = true;
+        gridRef.current.api.groupIncludeTotalFooter= true;
+
+        const resp = gridRef.current.api.getColumnDefs();
+        resp[0].rowGroup = true;
+        resp[0].hide = true;
+        resp[2].aggFunc = 'sum';
+        gridRef.current.api.setColumnDefs(resp);
+        /*
+        gridRef.current.columnApi.applyColumnState({
+            state: [
+                {colId: 'exercise_routine', rowGroup: true, hide:true},
+                {colId: 'duration', aggFunc: 'sum'},
+            ],
+            defaultState: { rowGroup: false },
+        });
+        */
+    }
+
+    return (
+        <div>
+            <div className = "row center">
+                {(loading ||fetching) && <LoadingBox label="Loading  data..." />}
+                {error && <MessageBox variant="danger">{error}</MessageBox>}
+            </div>
+            <div className = "row center">
+                <Card
+                    title="Exercise records"
+                    className='card'
+                    actions={[
+                        <Button type="primary" onClick={handleQuery}>Query</Button>,
+                        <Button type="primary" onClick={handleExport}>Export</Button>
+                    ]}
+                >
+                    <div className="row center">
+                        <div>
+                            <Select 
+                                placeholder="Select a category"
+                                defaultValue={exerciseType}
+                                onChange={value => setExerciseType(value)}
+                                style={{ width: 98 }}
+                            >
+                                <Select.Option value="all">All</Select.Option>
+                                <Select.Option value="walking">Walking</Select.Option>
+                                <Select.Option value="jogging">Jogging</Select.Option>                      
+                                <Select.Option value="cycling">Cycling</Select.Option>
+                                <Select.Option value="skipping">Skipping</Select.Option>
+                            </Select>
+                        </div>
+                        <div>
+                            <RangePicker onChange ={onDateChange}/>
+                        </div>
+                        <div><Checkbox onChange={onRichFeatureChange}>Checkbox</Checkbox></div>
+                    </div>
+                    <div className="ag-theme-alpine-dark" style={{height: 340, width: "100%"}}> 
+                        <AgGridReact
+                            ref={gridRef}
+                            modules={gridModulesRichFeature}
+                            pagination={true}
+                            columnDefs={columnDefs}
+                            rowData={messages}
+                            defaultColDef={{sortable: true, filter: true }}
+
+                            sideBar={{
+                                toolPanels: [
+                                  {
+                                    id: "columns",
+                                    labelDefault: "Columns",
+                                    labelKey: "columns",
+                                    iconKey: "columns",
+                                    toolPanel: "agColumnsToolPanel"
+                                  },
+                                  {
+                                    id: "filters",
+                                    labelDefault: "Filters",
+                                    labelKey: "filters",
+                                    iconKey: "filter",
+                                    toolPanel: "agFiltersToolPanel"
+                                  }
+                                ],
+                                position: "left",
+                                /*defaultToolPanel: "filters"*/
+                            }}
+                        >
+                        </AgGridReact>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+export default ReportUI;
