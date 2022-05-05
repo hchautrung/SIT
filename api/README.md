@@ -13,7 +13,7 @@ The Backend has been built based on micro MVC core by Trung Huynh
 ## Populate sameple data
 
 User data need to populated first via API <http://localhost:8282/User/seed>
-
+Please to be noted that Backend API need to be started first
 ## Development mode
 
 `$ nodemon`  

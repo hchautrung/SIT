@@ -9,5 +9,5 @@ Go to: http://localhost:3000 by default
 
 ## Build production
 
-    $ npm run build
+    $ yarn build
 Built files will be put in `./dist/` and ready to deploy to server.
